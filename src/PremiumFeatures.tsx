@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+﻿import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarDays, ChevronLeft, ChevronRight, Pause, Play, X } from 'lucide-react'
 import { engagementPhotos, preWeddingPhotos, weddingData } from './weddingData'
@@ -101,7 +101,7 @@ export function ScratchReveal({ onContinue }: { onContinue: () => void }) {
         <div className="scratch-reveal">
           <p>Save The Date</p>
           <strong>{weddingData.date.display}</strong>
-          <h3>{weddingData.couple.groom} <b>♥</b> {weddingData.couple.bride}</h3>
+          <h3>{weddingData.couple.groom} <b>â™¥</b> {weddingData.couple.bride}</h3>
           <span>Two Hearts. One Journey. Forever Together.</span>
           <div className="scratch-actions"><button onClick={addToCalendar}><CalendarDays/> Add to Calendar</button><button onClick={onContinue}>Continue Exploring <ChevronRight/></button></div>
         </div>
@@ -120,38 +120,25 @@ export function ScratchReveal({ onContinue }: { onContinue: () => void }) {
 }
 
 export function JourneyGallery() {
-  const [active,setActive] = useState(0)
-  const [rotation,setRotation] = useState(0)
-  const [paused,setPaused] = useState(false)
-  const [lightbox,setLightbox] = useState<number|null>(null)
-  const touchStart = useRef<number|null>(null)
-  const resumeTimer = useRef<number|null>(null)
-  const dragFrame = useRef<number|null>(null)
-  const suppressClick = useRef(false)
+  const [activeTab, setActiveTab] = useState<'pre' | 'engagement'>('pre')
+  const [active, setActive] = useState(0)
+  const [rotation, setRotation] = useState(0)
+  const [paused, setPaused] = useState(false)
+  const [lightbox, setLightbox] = useState<number | null>(null)
+  const dragRef = useRef({ active:false, startX:0, base:0, moved:false })
   const rotationRef = useRef(0)
-  const drag = useRef({
-    active:false,
-    startX:0,
-    baseRotation:0,
-    lastX:0,
-    lastTime:0,
-    velocity:0,
-    moved:false,
-  })
-  const photos = galleryPhotos.slice(0, 12)
+  const photos = activeTab === 'pre' ? preWeddingPhotos : engagementPhotos
   const count = photos.length
 
-  useEffect(() => {
-    rotationRef.current = rotation
-  }, [rotation])
+  useEffect(() => { rotationRef.current = rotation }, [rotation])
 
   useEffect(() => {
-    if (paused || lightbox !== null || drag.current.active) return
+    if (paused || lightbox !== null || dragRef.current.active) return
     let frame = 0
-    let last = performance.now()
+    let previous = performance.now()
     const animate = (now:number) => {
-      const delta = Math.min(now - last, 32)
-      last = now
+      const delta = Math.min(now - previous, 32)
+      previous = now
       setRotation(value => {
         const next = value - delta * .006
         rotationRef.current = next
@@ -161,120 +148,91 @@ export function JourneyGallery() {
     }
     frame = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(frame)
-  }, [paused, lightbox, drag.current.active])
+  }, [paused, lightbox, activeTab])
 
-  const pauseAndResume = (pause=true) => {
-    setPaused(pause)
-    if (resumeTimer.current) window.clearTimeout(resumeTimer.current)
-    if (pause) resumeTimer.current = window.setTimeout(() => setPaused(false), 3000)
+  const selectTab = (tab:'pre'|'engagement') => {
+    if (tab === activeTab) return
+    setLightbox(null)
+    setActive(0)
+    setRotation(0)
+    rotationRef.current = 0
+    setPaused(false)
+    setActiveTab(tab)
   }
 
   const selectPhoto = (index:number) => {
-    pauseAndResume(true)
-    if (index === active) {
-      setLightbox(index)
-      return
-    }
     setActive(index)
     const step = 360 / count
-    setRotation(-index * step)
+    const target = -index * step
+    setRotation(target)
+    rotationRef.current = target
   }
 
   const navigate = (direction:number) => {
-    const next = (active + direction + count) % count
-    selectPhoto(next)
+    selectPhoto((active + direction + count) % count)
   }
 
-  const onTouchStart = (clientX:number) => {
-    if (dragFrame.current) cancelAnimationFrame(dragFrame.current)
-    touchStart.current = clientX
-    drag.current = {
-      active:true,
-      startX:clientX,
-      baseRotation:rotationRef.current,
-      lastX:clientX,
-      lastTime:performance.now(),
-      velocity:0,
-      moved:false,
-    }
-    pauseAndResume(true)
+  const beginDrag = (clientX:number) => {
+    dragRef.current = { active:true, startX:clientX, base:rotationRef.current, moved:false }
   }
 
-  const onTouchMove = (clientX:number) => {
-    if (!drag.current.active) return
-    const now = performance.now()
-    const delta = clientX - drag.current.startX
-    const velocityDelta = clientX - drag.current.lastX
-    const elapsed = Math.max(now - drag.current.lastTime, 1)
-    drag.current.velocity = velocityDelta / elapsed
-    drag.current.lastX = clientX
-    drag.current.lastTime = now
-    if (Math.abs(delta) > 5) {
-      drag.current.moved = true
-      suppressClick.current = true
-    }
-    const next = drag.current.baseRotation + delta * .32
+  const moveDrag = (clientX:number) => {
+    if (!dragRef.current.active) return
+    const delta = clientX - dragRef.current.startX
+    if (Math.abs(delta) > 5) dragRef.current.moved = true
+    const next = dragRef.current.base + delta * .32
     rotationRef.current = next
     setRotation(next)
   }
 
-  const onTouchEnd = () => {
-    if (!drag.current.active) return
-    const moved = drag.current.moved
-    drag.current.active = false
-    touchStart.current = null
-
-    let velocity = drag.current.velocity
-    let current = rotationRef.current
+  const endDrag = () => {
+    if (!dragRef.current.active) return
+    dragRef.current.active = false
+    if (!dragRef.current.moved) return
     const step = 360 / count
-
-    const inertia = () => {
-      velocity *= .94
-      current += velocity * 18
-      rotationRef.current = current
-      setRotation(current)
-      if (Math.abs(velocity) > .035) {
-        dragFrame.current = requestAnimationFrame(inertia)
-      } else {
-        const nearestIndex = Math.round(-current / step)
-        const normalizedIndex = (nearestIndex % count + count) % count
-        const target = -normalizedIndex * step
-        let difference = ((target - current + 540) % 360) - 180
-        const snap = () => {
-          difference *= .82
-          const next = target - difference
-          rotationRef.current = next
-          setRotation(next)
-          if (Math.abs(difference) > .18) {
-            dragFrame.current = requestAnimationFrame(snap)
-          } else {
-            setRotation(target)
-            setActive(normalizedIndex)
-            pauseAndResume(true)
-          }
-        }
-        snap()
-      }
-    }
-
-    if (moved) inertia()
-    else drag.current.active = false
+    const nearest = ((Math.round(-rotationRef.current / step) % count) + count) % count
+    selectPhoto(nearest)
   }
 
-  return <section className="journey section orbit-section" id="story">
+  const heading = activeTab === 'pre'
+    ? ['Our Pre-Wedding Memories', 'Pre-Wedding Memories', 'Romance, laughter, and every beautiful moment before forever.']
+    : ['Our Engagement – A Beautiful Beginning', 'Engagement Memories', 'A promise made, a new chapter begun, and countless memories created.']
+
+  return <section className={`journey section orbit-section ${activeTab==='engagement'?'engagement-active':''}`} id="story">
     <div className="orbit-pattern" />
-    <div className="orbit-heading">
-      <p>Our Beautiful Journey</p>
-      <h2>Rupak Gola <span>♥</span> Anshika Prajapati</h2>
-      <strong>Every moment, a memory. Every memory, a story.</strong>
+
+    {activeTab === 'engagement' && <motion.div className="engagement-story"
+      key="engagement-story"
+      initial={{opacity:0,scale:.985}} animate={{opacity:1,scale:1}} transition={{duration:.7}}
+      style={{backgroundImage:`linear-gradient(90deg,rgba(38,8,12,.82),rgba(38,8,12,.18)),url('${engagementPhotos[0].src}')`}}>
+      <div><p>From Yes to Forever</p><h2>One beautiful moment,<br/><em>two happy hearts.</em></h2><span>And the beginning of a lifetime together.</span></div>
+    </motion.div>}
+
+    <div className="gallery-tabs" role="tablist" aria-label="Gallery category">
+      <button role="tab" aria-selected={activeTab==='pre'} className={activeTab==='pre'?'active':''} onClick={()=>selectTab('pre')}>Pre-Wedding</button>
+      <button role="tab" aria-selected={activeTab==='engagement'} className={activeTab==='engagement'?'active':''} onClick={()=>selectTab('engagement')}>Engagement</button>
     </div>
 
-    <div className="orbit-stage"
-      onPointerDown={(e)=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);onTouchStart(e.clientX)}}
-      onPointerMove={(e)=>{if(drag.current.active)e.preventDefault();onTouchMove(e.clientX)}}
-      onPointerUp={()=>onTouchEnd()}
-      onPointerCancel={()=>onTouchEnd()}>
-      <div className="orbit-center"><span>Our Beautiful</span><em>Journey</em></div>
+    <motion.div className="orbit-heading"
+      key={activeTab}
+      initial={{opacity:0,y:-8,scale:.985}}
+      animate={{opacity:1,y:0,scale:1}}
+      transition={{duration:.55}}>
+      <p>{heading[1]}</p>
+      <h2>{heading[0]}</h2>
+      <strong>{heading[2]}</strong>
+    </motion.div>
+
+    <motion.div className="orbit-stage"
+      key={activeTab}
+      initial={{opacity:0,scale:.94}}
+      animate={{opacity:1,scale:1}}
+      transition={{duration:.65,easing:'easeOut'}}
+      onPointerDown={(e)=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);beginDrag(e.clientX)}}
+      onPointerMove={(e)=>moveDrag(e.clientX)}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}>
+      <div className="orbit-center"><span>Our Beautiful</span><em>{activeTab==='pre'?'Journey':'Promise'}</em></div>
       <div className="orbit-ring">
         {photos.map((photo,index) => {
           const step = 360 / count
@@ -284,28 +242,22 @@ export function JourneyGallery() {
           const scale = .68 + depth * .32
           const x = normalized * (typeof window !== 'undefined' && window.innerWidth < 700 ? 38 : 42)
           const z = (Math.cos(angle) - 1) * 240
-          const zIndex = Math.round(depth * 100)
-          const opacity = .48 + depth * .52
           return <motion.button
-            key={photo.src}
+            key={`${activeTab}-${photo.src}`}
             className={`orbit-card ${index===active?'active':''}`}
-            style={{
-              transform:`translate3d(${x}vw, ${-Math.abs(normalized)*18}px, ${z}px) scale(${scale}) rotateY(${-normalized*18}deg)`,
-              zIndex,
-              opacity,
-            }}
-            onClick={(e)=>{e.stopPropagation();if(suppressClick.current){suppressClick.current=false;return}selectPhoto(index)}}
+            style={{transform:`translate3d(${x}vw, ${-Math.abs(normalized)*18}px, ${z}px) scale(${scale}) rotateY(${-normalized*18}deg)`,zIndex:Math.round(depth*100),opacity:.48+depth*.52}}
+            onClick={(e)=>{e.stopPropagation();if(index===active)setLightbox(index);else selectPhoto(index)}}
             aria-label={`${index===active?'Open':'Bring to front'} ${photo.caption}`}>
             <img src={photo.src} alt={photo.caption} loading={index<3?'eager':'lazy'} />
             <div><small>{photo.category}</small><strong>{photo.caption}</strong></div>
           </motion.button>
         })}
       </div>
-    </div>
+    </motion.div>
 
     <div className="orbit-controls">
       <button onClick={()=>navigate(-1)} aria-label="Previous photograph"><ChevronLeft/></button>
-      <button className="orbit-play" onClick={()=>pauseAndResume(!paused)} aria-label={paused?'Resume rotation':'Pause rotation'}>{paused?<Play/>:<Pause/>}</button>
+      <button className="orbit-play" onClick={()=>setPaused(!paused)} aria-label={paused?'Resume rotation':'Pause rotation'}>{paused?<Play/>:<Pause/>}</button>
       <button onClick={()=>navigate(1)} aria-label="Next photograph"><ChevronRight/></button>
     </div>
 
